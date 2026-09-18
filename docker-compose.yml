@@ -1,0 +1,81 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    # Монтируем код с хоста внутрь контейнера — меняешь файл локально,
+    # изменения сразу видны в контейнере, без пересборки образа
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+
+  web:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/app
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: online_store
+      POSTGRES_USER: online_store
+      POSTGRES_PASSWORD: secret
+    # Именованный volume — данные БД переживают `docker compose down`
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    command: php artisan queue:work
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    # Laravel сам решает, какую задачу пора запускать, но эту команду
+    # должен кто-то вызывать раз в минуту — этот контейнер и делает цикл
+    command: sh -c "while true; do php artisan schedule:run; sleep 60; done"
+
+volumes:
+  postgres_data:
