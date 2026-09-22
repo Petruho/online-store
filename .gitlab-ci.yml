@@ -1,37 +1,26 @@
 stages:
   - check
 
-variables:
-  POSTGRES_DB: online_store_test
-  POSTGRES_USER: online_store
-  POSTGRES_PASSWORD: secret
-  FF_NETWORK_PER_BUILD: "true"
+.php-setup: &php-setup
+  - apt-get update -qq && apt-get install -y -qq git unzip libzip-dev libicu-dev libpq-dev libonig-dev
+  - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath
+  - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  - composer install --no-interaction --prefer-dist --no-progress
 
-# --- PHP_CodeSniffer --------------------------------------------------------
 phpcs:
   stage: check
   image: php:8.4-cli
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq git unzip libpq-dev libzip-dev libicu-dev > /dev/null
-    - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath > /dev/null
-    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-    - composer install --no-interaction --prefer-dist --no-progress
+  before_script: *php-setup
   script:
     - vendor/bin/phpcs
 
-# --- PHPStan ----------------------------------------------------------------
 phpstan:
   stage: check
   image: php:8.4-cli
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq git unzip libpq-dev libzip-dev libicu-dev > /dev/null
-    - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath > /dev/null
-    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-    - composer install --no-interaction --prefer-dist --no-progress
+  before_script: *php-setup
   script:
     - vendor/bin/phpstan analyse --memory-limit=1G
 
-# --- Pest (PostgreSQL 16) ---------------------------------------------------
 pest:
   stage: check
   image: php:8.4-cli
@@ -39,9 +28,12 @@ pest:
     - name: postgres:16-alpine
       alias: postgres
   variables:
+    POSTGRES_DB: online_store_test
+    POSTGRES_USER: online_store
+    POSTGRES_PASSWORD: secret
     DB_CONNECTION: pgsql
     DB_HOST: postgres
-    DB_PORT: 5432
+    DB_PORT: "5432"
     DB_DATABASE: online_store_test
     DB_USERNAME: online_store
     DB_PASSWORD: secret
@@ -50,17 +42,13 @@ pest:
     QUEUE_CONNECTION: sync
     MAIL_MAILER: array
   before_script:
-    - apt-get update -qq && apt-get install -y -qq git unzip libpq-dev libzip-dev libicu-dev > /dev/null
-    - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath > /dev/null
-    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-    - composer install --no-interaction --prefer-dist --no-progress
+    - *php-setup
     - cp .env.example .env
     - php artisan key:generate
     - php artisan migrate --force
   script:
     - php artisan test
 
-# --- Frontend ---------------------------------------------------------------
 frontend:
   stage: check
   image: node:22-alpine
