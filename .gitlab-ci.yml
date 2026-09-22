@@ -1,0 +1,73 @@
+stages:
+  - check
+
+variables:
+  POSTGRES_DB: online_store_test
+  POSTGRES_USER: online_store
+  POSTGRES_PASSWORD: secret
+  FF_NETWORK_PER_BUILD: "true"
+
+# --- PHP_CodeSniffer --------------------------------------------------------
+phpcs:
+  stage: check
+  image: php:8.4-cli
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git unzip libpq-dev libzip-dev libicu-dev > /dev/null
+    - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath > /dev/null
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer install --no-interaction --prefer-dist --no-progress
+  script:
+    - vendor/bin/phpcs
+
+# --- PHPStan ----------------------------------------------------------------
+phpstan:
+  stage: check
+  image: php:8.4-cli
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git unzip libpq-dev libzip-dev libicu-dev > /dev/null
+    - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath > /dev/null
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer install --no-interaction --prefer-dist --no-progress
+  script:
+    - vendor/bin/phpstan analyse --memory-limit=1G
+
+# --- Pest (PostgreSQL 16) ---------------------------------------------------
+pest:
+  stage: check
+  image: php:8.4-cli
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    DB_CONNECTION: pgsql
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_DATABASE: online_store_test
+    DB_USERNAME: online_store
+    DB_PASSWORD: secret
+    CACHE_STORE: array
+    SESSION_DRIVER: array
+    QUEUE_CONNECTION: sync
+    MAIL_MAILER: array
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git unzip libpq-dev libzip-dev libicu-dev > /dev/null
+    - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath > /dev/null
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer install --no-interaction --prefer-dist --no-progress
+    - cp .env.example .env
+    - php artisan key:generate
+    - php artisan migrate --force
+  script:
+    - php artisan test
+
+# --- Frontend ---------------------------------------------------------------
+frontend:
+  stage: check
+  image: node:22-alpine
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run typecheck
+    - npm run lint
+    - npm run build
