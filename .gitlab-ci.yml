@@ -1,35 +1,63 @@
 stages:
   - check
 
-variables:
-  DOCKER_TLS_CERTDIR: ""
-  DOCKER_HOST: tcp://docker:2375
+.php-setup: &php-setup
+  - apt-get update -qq && apt-get install -y -qq git unzip libzip-dev libicu-dev libpq-dev libonig-dev
+  - docker-php-ext-install pdo pdo_pgsql intl mbstring zip bcmath
+  - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  - composer install --no-interaction --prefer-dist --no-progress
 
-# Все проверки в том же Docker Compose, что и локально (make check)
-check:
+phpcs:
   stage: check
-  image: docker:24-cli
-  services:
-    - name: docker:24-dind
-      alias: docker
-  timeout: 20m
+  image: php:8.4-cli
+  before_script:
+    - *php-setup
   script:
+    - vendor/bin/phpcs
+
+phpstan:
+  stage: check
+  image: php:8.4-cli
+  before_script:
+    - *php-setup
+  script:
+    - vendor/bin/phpstan analyse --memory-limit=1G
+
+frontend:
+  stage: check
+  image: node:22-alpine
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run typecheck
+    - npm run lint
+    - npm run build
+
+pest:
+  stage: check
+  image: php:8.4-cli
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: online_store_test
+    POSTGRES_USER: online_store
+    POSTGRES_PASSWORD: secret
+    DB_CONNECTION: pgsql
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_DATABASE: online_store_test
+    DB_USERNAME: online_store
+    DB_PASSWORD: secret
+    CACHE_STORE: array
+    SESSION_DRIVER: array
+    QUEUE_CONNECTION: sync
+    MAIL_MAILER: array
+  before_script:
+    - *php-setup
     - cp .env.example .env
-
-    # Тот же стек, что у разработчика
-    - docker compose up -d --build
-    - docker compose run --rm --no-deps app composer install --no-interaction --prefer-dist --no-progress
-    - docker compose run --rm --no-deps frontend sh -c "npm ci"
-
-    - docker compose exec -T app php artisan key:generate --force
-    - docker compose exec -T app php artisan migrate --force
-
-    # Те же команды, что make check / make test
-    - docker compose exec -T app vendor/bin/phpcs
-    - docker compose exec -T app vendor/bin/phpstan analyse --memory-limit=1G
-    - docker compose exec -T app php artisan test
-    - docker compose run --rm --no-deps frontend sh -c "npm run typecheck"
-    - docker compose run --rm --no-deps frontend sh -c "npm run lint"
-    - docker compose run --rm --no-deps frontend sh -c "npm run build"
-  after_script:
-    - docker compose down -v || true
+    - php artisan key:generate
+    - php artisan migrate --force
+  script:
+    - php artisan test
