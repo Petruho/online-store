@@ -21,10 +21,12 @@
 /storage/*.key
 /storage/pail
 /vendor
+/frontend/node_modules/
 _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
 
 # --- Docker / локальные данные ---
 docker-compose.override.yml
