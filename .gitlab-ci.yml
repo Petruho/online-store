@@ -21,8 +21,23 @@ phpstan:
   script:
     - vendor/bin/phpstan analyse --memory-limit=1G
 
+frontend:
+  stage: check
+  image: node:22-alpine
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run typecheck
+    - npm run lint
+    - npm run build
+  artifacts:
+    paths:
+      - public/build
+
 pest:
   stage: check
+  needs: ["frontend"]
   image: php:8.4-cli
   services:
     - name: postgres:16-alpine
@@ -48,14 +63,3 @@ pest:
     - php artisan migrate --force
   script:
     - php artisan test
-
-frontend:
-  stage: check
-  image: node:22-alpine
-  before_script:
-    - cd frontend
-    - npm ci
-  script:
-    - npm run typecheck
-    - npm run lint
-    - npm run build
