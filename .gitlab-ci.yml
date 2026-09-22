@@ -33,10 +33,16 @@ frontend:
     - npm run typecheck
     - npm run lint
     - npm run build
+  artifacts:
+    paths:
+      - public/build/
 
 pest:
   stage: check
   image: php:8.4-cli
+  needs:
+    - job: frontend
+      artifacts: true
   services:
     - name: postgres:16-alpine
       alias: postgres
